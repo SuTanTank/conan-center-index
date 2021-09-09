@@ -31,6 +31,7 @@ class OpenCVConan(ConanFile):
         "with_gtk": [True, False],
         "with_quirc": [True, False],
         "with_cuda": [True, False],
+        "cuda_version": [None, "10.0", "10.1", "10.2", "11.0", "11.1", "11.2", "11.3", "11.4"],
         "with_cublas": [True, False],
         "with_cufft": [True, False],
         "with_v4l": [True, False],
@@ -59,6 +60,7 @@ class OpenCVConan(ConanFile):
         "with_gtk": True,
         "with_quirc": True,
         "with_cuda": False,
+        "cuda_version": None,
         "with_cublas": False,
         "with_cufft": False,
         "with_v4l": False,
@@ -97,6 +99,20 @@ class OpenCVConan(ConanFile):
     def _has_with_tiff_option(self):
         return self.settings.os != "iOS"
 
+    def find_cuda_version(self):
+        from io import StringIO
+        stream = StringIO()
+        try:
+            self.run("nvcc -V", output=stream)
+        except:
+            self.output.error("cannot find nvcc in PATH. ")
+            return "0"
+        res = str(stream.getvalue())
+        release = res.rfind("release ")
+        comma = res.rfind(", V")
+        version = res[release + len("release "):comma]
+        return version
+
     def config_options(self):
         if self.settings.os == "Windows":
             del self.options.fPIC
@@ -117,8 +133,11 @@ class OpenCVConan(ConanFile):
             del self.options.contrib_freetype
             del self.options.contrib_sfm
         if not self.options.with_cuda:
+            del self.options.cuda_version
             del self.options.with_cublas
             del self.options.with_cufft
+        if self.options.with_cuda and not self.options.cuda_version:
+            self.options.cuda_version = self.find_cuda_version()
         if bool(self.options.with_jpeg):
             if self.options.get_safe("with_jpeg2000") == "jasper":
                 self.options["jasper"].with_libjpeg = self.options.with_jpeg
@@ -171,6 +190,10 @@ class OpenCVConan(ConanFile):
             raise ConanInvalidConfiguration("Clang 3.x can build OpenCV 4.x due an internal bug.")
         if self.options.with_cuda and not self.options.contrib:
             raise ConanInvalidConfiguration("contrib must be enabled for cuda")
+        if self.options.with_cuda:
+            cuda_version = self.find_cuda_version()
+            if cuda_version != self.options.cuda_version:
+                raise ConanInvalidConfiguration("System CUDA version {} does not match with option {}".format(cuda_version, self.options.cuda_version))
 
     def build_requirements(self):
         if self.options.dnn and hasattr(self, "settings_build"):
