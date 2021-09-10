@@ -31,7 +31,6 @@ class OpenCVConan(ConanFile):
         "with_gtk": [True, False],
         "with_quirc": [True, False],
         "with_cuda": [True, False],
-        "cuda_version": [None, "10.0", "10.1", "10.2", "11.0", "11.1", "11.2", "11.3", "11.4"],
         "with_cublas": [True, False],
         "with_cufft": [True, False],
         "with_v4l": [True, False],
@@ -44,9 +43,9 @@ class OpenCVConan(ConanFile):
         "detect_cpu_baseline": [True, False]
     }
     default_options = {
-        "shared": False,
+        "shared": True,
         "fPIC": True,
-        "parallel": False,
+        "parallel": "tbb",
         "contrib": False,
         "contrib_freetype": False,
         "contrib_sfm": False,
@@ -60,7 +59,6 @@ class OpenCVConan(ConanFile):
         "with_gtk": True,
         "with_quirc": True,
         "with_cuda": False,
-        "cuda_version": None,
         "with_cublas": False,
         "with_cufft": False,
         "with_v4l": False,
@@ -106,7 +104,7 @@ class OpenCVConan(ConanFile):
             self.run("nvcc -V", output=stream)
         except:
             self.output.error("cannot find nvcc in PATH. ")
-            return "0"
+            return None
         res = str(stream.getvalue())
         release = res.rfind("release ")
         comma = res.rfind(", V")
@@ -129,6 +127,8 @@ class OpenCVConan(ConanFile):
     def configure(self):
         if self.options.shared:
             del self.options.fPIC
+        if self.options.with_cuda:
+            self.options.contrib = True
         if not self.options.contrib:
             del self.options.contrib_freetype
             del self.options.contrib_sfm
@@ -136,8 +136,6 @@ class OpenCVConan(ConanFile):
             del self.options.cuda_version
             del self.options.with_cublas
             del self.options.with_cufft
-        if self.options.with_cuda and not self.options.cuda_version:
-            self.options.cuda_version = self.find_cuda_version()
         if bool(self.options.with_jpeg):
             if self.options.get_safe("with_jpeg2000") == "jasper":
                 self.options["jasper"].with_libjpeg = self.options.with_jpeg
@@ -146,6 +144,8 @@ class OpenCVConan(ConanFile):
 
         if self.settings.os == "Android":
             self.options.with_openexr = False  # disabled because this forces linkage to libc++_shared.so
+        if self.settings.build_type != "Debug":
+            self.settings.build_type = "Release" # force use only Release and Debug to avoid unnecessary builds
 
     def requirements(self):
         self.requires("zlib/1.2.11")
@@ -190,10 +190,6 @@ class OpenCVConan(ConanFile):
             raise ConanInvalidConfiguration("Clang 3.x can build OpenCV 4.x due an internal bug.")
         if self.options.with_cuda and not self.options.contrib:
             raise ConanInvalidConfiguration("contrib must be enabled for cuda")
-        if self.options.with_cuda:
-            cuda_version = self.find_cuda_version()
-            if cuda_version != self.options.cuda_version:
-                raise ConanInvalidConfiguration("System CUDA version {} does not match with option {}".format(cuda_version, self.options.cuda_version))
 
     def build_requirements(self):
         if self.options.dnn and hasattr(self, "settings_build"):
@@ -658,3 +654,7 @@ class OpenCVConan(ConanFile):
             self.cpp_info.components["opencv_videoio"].frameworks = ["Cocoa", "Accelerate", "AVFoundation", "CoreGraphics", "CoreMedia", "CoreVideo", "QuartzCore"]
         elif self.settings.os == "iOS":
             self.cpp_info.components["opencv_videoio"].frameworks = ["AVFoundation", "QuartzCore"]
+
+    def package_id(self):
+        if self.options.with_cuda:
+            self.info.options.cuda_version = self.find_cuda_version()
